@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tapering Dose Response Fitter</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div>
+        <h1>Tapering Dose Response Fitter</h1>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="controls-panel">
+        <section class="panel-block">
+          <div class="panel-head">
+            <h2>Model Variables</h2>
+            <button id="reset-defaults" class="ghost-button" type="button">Reset Defaults</button>
+          </div>
+
+          <div class="dual-control" data-key="half_life_h" data-decimals="2">
+            <label for="half_life_h_number">half_life_h</label>
+            <input id="half_life_h_range" type="range" min="1" max="240" step="0.5">
+            <input id="half_life_h_number" type="number" min="1" max="240" step="0.5">
+          </div>
+
+          <div class="dual-control" data-key="tau_h" data-decimals="2">
+            <label for="tau_h_number">tau_h</label>
+            <input id="tau_h_range" type="range" min="1" max="48" step="0.5">
+            <input id="tau_h_number" type="number" min="1" max="48" step="0.5">
+          </div>
+
+          <div class="dual-control" data-key="days" data-decimals="0">
+            <label for="days_number">days</label>
+            <input id="days_range" type="range" min="1" max="730" step="1">
+            <input id="days_number" type="number" min="1" max="730" step="1">
+          </div>
+
+          <div class="dual-control" data-key="r_end_pct" data-decimals="1">
+            <label for="r_end_pct_number">R_end_pct (%)</label>
+            <input id="r_end_pct_range" type="range" min="0" max="100" step="0.5">
+            <input id="r_end_pct_number" type="number" min="0" max="100" step="0.5">
+          </div>
+
+          <div class="dual-control" data-key="start_dose_mg" data-decimals="3">
+            <label for="start_dose_mg_number">start_dose_mg</label>
+            <input id="start_dose_mg_range" type="range" min="0" max="300" step="0.1">
+            <input id="start_dose_mg_number" type="number" min="0" max="300" step="0.1">
+          </div>
+
+          <div class="field-row compact">
+            <label for="mode_select">mode</label>
+            <select id="mode_select">
+              <option value="peak">peak</option>
+              <option value="trough">trough</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel-block">
+          <div class="panel-head">
+            <h2>Calibration Anchors (dose:response)</h2>
+          </div>
+
+          <div id="anchor-controls"></div>
+        </section>
+      </aside>
+
+      <section class="results-panel">
+        <div class="results-top-grid">
+          <section class="results-block results-block-compact">
+            <div class="panel-head">
+              <h2>Planning</h2>
+            </div>
+
+            <div class="field-row field-row-inline compact">
+              <label for="starting_date">starting date</label>
+              <input id="starting_date" type="date">
+            </div>
+          </section>
+
+          <section class="results-block results-block-compact">
+            <div class="panel-head">
+              <h2>Actions</h2>
+            </div>
+
+            <div class="action-grid action-grid-compact">
+              <button id="recompute" type="button">Recompute / Update Graphs</button>
+              <button id="download_csv" type="button">Download CSV</button>
+              <button id="download_plot" type="button">Download Graphs as PNG</button>
+              <button id="print_preview" type="button">Print Dose Schedule (Popup)</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="results-block">
+          <div class="panel-head">
+            <h2>Summary Charts</h2>
+          </div>
+          <div id="chart_mount" class="chart-frame"></div>
+        </section>
+
+        <section class="results-block results-table-block">
+          <div class="panel-head">
+            <h2>Schedule Preview</h2>
+          </div>
+          <div class="table-wrap">
+            <table id="schedule_table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
