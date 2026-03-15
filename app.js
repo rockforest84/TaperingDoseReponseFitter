@@ -37,6 +37,35 @@
     "R_trough",
   ];
 
+  const SCHEDULE_PREVIEW_COLUMNS = [
+    { key: "day", label: "day" },
+    { key: "weekday", label: "weekday" },
+    { key: "date", label: "date" },
+    { key: "dose_mg", label: "dose_mg" },
+    { key: "R_target", label: "R_target" },
+    { key: "R_peak", label: "R_peak" },
+    { key: "R_trough", label: "R_trough" },
+    { key: "A_target", label: "A_target" },
+    { key: "A_peak", label: "A_peak" },
+    { key: "A_trough", label: "A_trough" },
+  ];
+
+  const SCREEN_CHART_THEME = Object.freeze({
+    pageFill: "#fffdfa",
+    panelFill: "#fffdf9",
+    panelStroke: "rgba(27,29,32,0.12)",
+    legendFill: "rgba(255,255,255,0.86)",
+    legendStroke: "rgba(27,29,32,0.12)",
+  });
+
+  const PRINT_CHART_THEME = Object.freeze({
+    pageFill: "#ffffff",
+    panelFill: "#ffffff",
+    panelStroke: "rgba(27,29,32,0.12)",
+    legendFill: "#ffffff",
+    legendStroke: "rgba(27,29,32,0.12)",
+  });
+
   const state = {
     values: cloneDefaults(),
     result: null,
@@ -57,9 +86,8 @@
 
   function init() {
     cacheDom();
-    buildAnchorControls();
-    hydrateControlsFromState();
     bindEvents();
+    hydrateControlsFromState();
     recompute();
   }
 
@@ -74,9 +102,9 @@
       "starting_date",
       "chart_mount",
       "schedule_table",
-      "recompute",
+      "anchor-controls",
+      "add-anchor",
       "download_csv",
-      "download_plot",
       "print_preview",
       "reset-defaults",
     ].forEach((id) => {
@@ -85,23 +113,22 @@
   }
 
   function buildAnchorControls() {
-    const mount = document.getElementById("anchor-controls");
+    const mount = dom.anchor_controls;
     mount.innerHTML = "";
-    DEFAULTS.calibration_points.forEach((point, index) => {
+    const canRemove = state.values.calibration_points.length > 2;
+    state.values.calibration_points.forEach((point, index) => {
       const row = document.createElement("div");
       row.className = "anchor-row";
       row.innerHTML = [
-        `<div class="panel-head"><h2>Anchor ${index + 1}</h2></div>`,
-        `<div class="dual-control" data-anchor-index="${index}" data-anchor-field="dose" data-decimals="2">`,
-        `<label for="anchor_${index}_dose_number">D${index + 1}</label>`,
-        `<input id="anchor_${index}_dose_range" type="range" min="0.01" max="500" step="0.1">`,
-        `<input id="anchor_${index}_dose_number" type="number" min="0.01" max="500" step="0.1">`,
+        `<div class="anchor-field">`,
+        `<label for="anchor_${index}_dose_number">Dose</label>`,
+        `<input id="anchor_${index}_dose_number" type="number" min="0.01" max="500" step="0.1" data-anchor-index="${index}" data-anchor-field="dose" value="${trimNumeric(point[0])}">`,
         `</div>`,
-        `<div class="dual-control" data-anchor-index="${index}" data-anchor-field="response" data-decimals="3">`,
-        `<label for="anchor_${index}_response_number">R${index + 1}</label>`,
-        `<input id="anchor_${index}_response_range" type="range" min="0" max="1" step="0.01">`,
-        `<input id="anchor_${index}_response_number" type="number" min="0" max="1" step="0.01">`,
+        `<div class="anchor-field">`,
+        `<label for="anchor_${index}_response_number">Response</label>`,
+        `<input id="anchor_${index}_response_number" type="number" min="0" max="1" step="0.01" data-anchor-index="${index}" data-anchor-field="response" value="${trimNumeric(point[1])}">`,
         `</div>`,
+        `<button class="ghost-button anchor-remove-button" type="button" data-anchor-remove="${index}" title="Remove anchor" aria-label="Remove anchor"${canRemove ? "" : " disabled"}>x</button>`,
       ].join("");
       mount.appendChild(row);
     });
@@ -113,11 +140,7 @@
     });
     dom.mode_select.value = state.values.mode;
     dom.starting_date.value = state.values.start_date;
-
-    state.values.calibration_points.forEach((point, index) => {
-      syncAnchorControl(index, "dose", point[0]);
-      syncAnchorControl(index, "response", point[1]);
-    });
+    buildAnchorControls();
   }
 
   function bindEvents() {
@@ -138,21 +161,33 @@
       });
     });
 
-    document.querySelectorAll("[data-anchor-index]").forEach((el) => {
-      const inputs = el.querySelectorAll("input");
-      inputs.forEach((input) => {
-        input.addEventListener("input", () => {
-          const index = Number(el.dataset.anchorIndex);
-          const field = el.dataset.anchorField;
-          const pairId = input.id.endsWith("_range") ? input.id.replace("_range", "_number") : input.id.replace("_number", "_range");
-          const sibling = document.getElementById(pairId);
-          if (sibling) {
-            sibling.value = input.value;
-          }
-          state.values.calibration_points[index][field === "dose" ? 0 : 1] = Number(input.value);
-          debouncedRecompute();
-        });
-      });
+    dom.anchor_controls.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || !target.dataset.anchorField) {
+        return;
+      }
+      const index = Number(target.dataset.anchorIndex);
+      const fieldIndex = target.dataset.anchorField === "dose" ? 0 : 1;
+      state.values.calibration_points[index][fieldIndex] = Number(target.value);
+      debouncedRecompute();
+    });
+
+    dom.anchor_controls.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const removeButton = target.closest("[data-anchor-remove]");
+      if (!removeButton) {
+        return;
+      }
+      if (state.values.calibration_points.length <= 2) {
+        return;
+      }
+      const index = Number(removeButton.getAttribute("data-anchor-remove"));
+      state.values.calibration_points.splice(index, 1);
+      buildAnchorControls();
+      recompute();
     });
 
     [
@@ -169,10 +204,13 @@
       });
     });
 
-    dom.recompute.addEventListener("click", recompute);
     dom.download_csv.addEventListener("click", downloadCsv);
-    dom.download_plot.addEventListener("click", downloadPlotPng);
     dom.print_preview.addEventListener("click", openPrintPopup);
+    dom.add_anchor.addEventListener("click", () => {
+      state.values.calibration_points.push(defaultNewAnchorPoint());
+      buildAnchorControls();
+      recompute();
+    });
     dom.reset_defaults.addEventListener("click", () => {
       state.values = cloneDefaults();
       hydrateControlsFromState();
@@ -194,9 +232,18 @@
   }
 
   function syncAnchorControl(index, field, value) {
-    const prefix = `anchor_${index}_${field}`;
-    document.getElementById(prefix + "_range").value = String(value);
-    document.getElementById(prefix + "_number").value = String(value);
+    const input = document.getElementById(`anchor_${index}_${field}_number`);
+    if (input) {
+      input.value = String(value);
+    }
+  }
+
+  function defaultNewAnchorPoint() {
+    const last = state.values.calibration_points[state.values.calibration_points.length - 1] || DEFAULTS.calibration_points[DEFAULTS.calibration_points.length - 1];
+    return [
+      Math.min(500, Math.max(0.01, Number((last[0] * 1.25).toFixed(2)))),
+      Math.min(1, Math.max(0, Number(last[1].toFixed(3)))),
+    ];
   }
 
   function recompute() {
@@ -250,12 +297,11 @@
       return;
     }
 
-    const columns = ["date"].concat(CSV_COLUMNS);
-    thead.innerHTML = `<tr>${columns.map((name) => `<th>${escapeHtml(name)}</th>`).join("")}</tr>`;
+    thead.innerHTML = `<tr>${SCHEDULE_PREVIEW_COLUMNS.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
     tbody.innerHTML = state.downloadRows
       .slice(0, 160)
       .map((row) => {
-        return `<tr>${columns.map((name) => `<td>${escapeHtml(formatTableValue(row[name]))}</td>`).join("")}</tr>`;
+        return `<tr>${SCHEDULE_PREVIEW_COLUMNS.map((column) => `<td>${escapeHtml(formatSchedulePreviewValue(row, column.key))}</td>`).join("")}</tr>`;
       })
       .join("");
   }
@@ -667,6 +713,7 @@
   function buildSummarySvg(schedule, config, n, ec50, calibrationPoints, options) {
     const width = options.width || 1180;
     const height = options.height || 360;
+    const theme = options.theme || SCREEN_CHART_THEME;
     const gutter = 20;
     const panelWidth = (width - (gutter * 4)) / 3;
     const panelHeight = height - 34;
@@ -709,22 +756,22 @@
     });
 
     const sections = [
-      buildDosePanel(days, doses, accumulated, gutter, 18, panelWidth, panelHeight),
-      buildCurvePanel(curveX, curveY, calibrationPoints, config.start_dose_mg, config, n, ec50, gutter * 2 + panelWidth, 18, panelWidth, panelHeight),
-      buildResponsePanel(days, rTarget, rPeak, rTrough, gutter * 3 + panelWidth * 2, 18, panelWidth, panelHeight),
+      buildDosePanel(days, doses, accumulated, gutter, 18, panelWidth, panelHeight, theme),
+      buildCurvePanel(curveX, curveY, calibrationPoints, config.start_dose_mg, config, n, ec50, gutter * 2 + panelWidth, 18, panelWidth, panelHeight, theme),
+      buildResponsePanel(days, rTarget, rPeak, rTrough, gutter * 3 + panelWidth * 2, 18, panelWidth, panelHeight, theme),
     ].join("");
 
     return [
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Summary charts">`,
-      `<rect width="${width}" height="${height}" fill="#fffdfa" rx="18" ry="18"></rect>`,
+      `<rect width="${width}" height="${height}" fill="${theme.pageFill}" rx="18" ry="18"></rect>`,
       sections,
       `</svg>`,
     ].join("");
   }
 
-  function buildDosePanel(days, doses, accumulated, x, y, width, height) {
+  function buildDosePanel(days, doses, accumulated, x, y, width, height, theme) {
     const maxDose = maxOrFallback(doses, 1);
-    const chart = buildChartFrame("Dose vs day", "Day", "Dose (mg)", x, y, width, height);
+    const chart = buildChartFrame("Dose vs day", "Day", "Dose (mg)", x, y, width, height, theme);
     const inner = chart.inner;
     const dosePoints = polylinePoints(days, doses, inner.x, inner.y, inner.width, inner.height, 0, maxOrPad(days), 0, maxDose);
     const accumScaleMax = maxOrFallback(accumulated, 1);
@@ -732,7 +779,7 @@
     const legend = buildLegend([
       ["Dose", "#0e5a67"],
       ["Accumulated", "#c76637"],
-    ], inner.x + 12, inner.y + 14);
+    ], inner.x + 12, inner.y + 14, theme);
     return [
       chart.open,
       buildGrid(inner.x, inner.y, inner.width, inner.height, 5, 5),
@@ -745,8 +792,8 @@
     ].join("");
   }
 
-  function buildCurvePanel(curveX, curveY, calibrationPoints, startDose, config, n, ec50, x, y, width, height) {
-    const chart = buildChartFrame("Dose-response curve", "Sustained daily dose (mg)", "Response fraction", x, y, width, height);
+  function buildCurvePanel(curveX, curveY, calibrationPoints, startDose, config, n, ec50, x, y, width, height, theme) {
+    const chart = buildChartFrame("Dose-response curve", "Sustained daily dose (mg)", "Response fraction", x, y, width, height, theme);
     const inner = chart.inner;
     const curvePoints = polylinePointsLogX(curveX, curveY, inner.x, inner.y, inner.width, inner.height, curveX[0], curveX[curveX.length - 1], 0, 1);
     const anchorDots = calibrationPoints.map(([dose, response]) => {
@@ -764,7 +811,7 @@
       ["Hill fit", "#0e5a67"],
       ["Anchors", "#c76637"],
       ["Start dose", "#8a3d14"],
-    ], inner.x + 12, inner.y + 14);
+    ], inner.x + 12, inner.y + 14, theme);
     return [
       chart.open,
       buildGrid(inner.x, inner.y, inner.width, inner.height, 5, 5),
@@ -778,8 +825,8 @@
     ].join("");
   }
 
-  function buildResponsePanel(days, rTarget, rPeak, rTrough, x, y, width, height) {
-    const chart = buildChartFrame("Response vs day", "Day", "Response fraction", x, y, width, height);
+  function buildResponsePanel(days, rTarget, rPeak, rTrough, x, y, width, height, theme) {
+    const chart = buildChartFrame("Response vs day", "Day", "Response fraction", x, y, width, height, theme);
     const inner = chart.inner;
     const maxDay = maxOrPad(days);
     const targetPoints = polylinePoints(days, rTarget, inner.x, inner.y, inner.width, inner.height, 0, maxDay, 0, 1);
@@ -789,7 +836,7 @@
       ["R_target", "#0e5a67"],
       ["R_peak", "#c76637"],
       ["R_trough", "#8a3d14"],
-    ], inner.x + 12, inner.y + 14);
+    ], inner.x + 12, inner.y + 14, theme);
     return [
       chart.open,
       buildGrid(inner.x, inner.y, inner.width, inner.height, 5, 5),
@@ -803,7 +850,7 @@
     ].join("");
   }
 
-  function buildChartFrame(title, xLabel, yLabel, x, y, width, height) {
+  function buildChartFrame(title, xLabel, yLabel, x, y, width, height, theme) {
     const inner = {
       x: x + 56,
       y: y + 34,
@@ -812,7 +859,7 @@
     };
     const open = [
       `<g>`,
-      `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="18" ry="18" fill="#fffdf9" stroke="rgba(27,29,32,0.12)"></rect>`,
+      `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="18" ry="18" fill="${theme.panelFill}" stroke="${theme.panelStroke}"></rect>`,
       `<text x="${x + 18}" y="${y + 24}" font-family="'Segoe UI','Arial',sans-serif" font-size="16" font-weight="400" fill="#1b1d20">${escapeHtml(title)}</text>`,
       `<text x="${inner.x + inner.width / 2}" y="${y + height - 14}" font-size="10" fill="#5e615e" text-anchor="middle">${escapeHtml(xLabel)}</text>`,
       `<text transform="translate(${x + 18} ${inner.y + inner.height / 2}) rotate(-90)" font-size="10" fill="#5e615e" text-anchor="middle">${escapeHtml(yLabel)}</text>`,
@@ -821,7 +868,7 @@
     return { open, close, inner };
   }
 
-  function buildLegend(items, x, y) {
+  function buildLegend(items, x, y, theme) {
     const rowHeight = 16;
     const legendWidth = items.reduce((maxWidth, item) => Math.max(maxWidth, 34 + item[0].length * 6), 110);
     const legendHeight = 14 + items.length * rowHeight;
@@ -833,7 +880,7 @@
       ].join("");
     }).join("");
     return [
-      `<rect x="${x}" y="${y}" width="${legendWidth}" height="${legendHeight}" rx="10" ry="10" fill="rgba(255,255,255,0.86)" stroke="rgba(27,29,32,0.12)"></rect>`,
+      `<rect x="${x}" y="${y}" width="${legendWidth}" height="${legendHeight}" rx="10" ry="10" fill="${theme.legendFill}" stroke="${theme.legendStroke}"></rect>`,
       rows,
     ].join("");
   }
@@ -924,6 +971,7 @@
     return {
       date,
       day: row.day,
+      weekday: weekdayShort(date),
       R_target: row.r_target,
       A_target: row.a_target,
       dose_mg: row.dose_mg,
@@ -951,20 +999,6 @@
     downloadBlob(filename, "text/csv;charset=utf-8", csvStringFromRows(state.downloadRows));
   }
 
-  function downloadPlotPng() {
-    if (!state.chartSvg) {
-      return;
-    }
-    const filename = ensureExtension(normalizeFilename(state.values.plot_filename || "schedule_summary.png"), ".png");
-    svgToPngDataUrl(state.chartSvg, 2360, 720)
-      .then((dataUrl) => {
-        downloadDataUrl(filename, dataUrl);
-      })
-      .catch((error) => {
-        window.alert(`Error: ${error.message}`);
-      });
-  }
-
   function openPrintPopup() {
     if (!state.result || !state.configUsed || !state.chartSvg) {
       return;
@@ -980,6 +1014,7 @@
   }
 
   function buildPrintPageHtml() {
+    const printChartSvg = buildPrintChartSvg();
     return [
       "<!doctype html>",
       "<html lang='en'>",
@@ -987,18 +1022,19 @@
       "<meta charset='utf-8'>",
       "<title>Print Preview - Dose Schedule</title>",
       "<style>",
-      "body{font-family:'Trebuchet MS','Lucida Sans Unicode',sans-serif;margin:0;background:#f5efe5;color:#1b1d20;}",
+      "body{font-family:'Trebuchet MS','Lucida Sans Unicode',sans-serif;margin:0;background:#ffffff;color:#1b1d20;}",
       ".shell{max-width:1180px;margin:0 auto;padding:28px;}",
       ".toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:18px;}",
       ".toolbar button{padding:10px 14px;border:0;border-radius:10px;background:#0e5a67;color:#fff;cursor:pointer;}",
-      ".card{background:#fffdfa;border:1px solid rgba(27,29,32,0.16);border-radius:18px;padding:22px;box-shadow:0 12px 30px rgba(25,27,30,0.08);}",
+      ".card{background:#ffffff;border:1px solid rgba(27,29,32,0.16);border-radius:18px;padding:22px;box-shadow:0 12px 30px rgba(25,27,30,0.08);}",
       "h1{font-family:'Palatino Linotype','Book Antiqua',Palatino,serif;margin:0 0 4px;font-size:28px;}",
       "p.meta{margin:0 0 14px;color:#5e615e;font-size:12px;}",
-      ".chart svg{width:100%;height:auto;display:block;}",
-      "table{width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;}",
-      "th,td{border:1px solid #8d8d8d;padding:2px 4px;text-align:left;}",
+      ".chart{background:#ffffff;}",
+      ".chart svg{width:100%;height:auto;display:block;background:#ffffff;}",
+      "table{width:auto;max-width:100%;border-collapse:collapse;font-size:10px;table-layout:auto;}",
+      "th,td{border:1px solid #8d8d8d;padding:2px 4px;text-align:left;white-space:nowrap;}",
       "th{background:#efefef;}",
-      "th.spacer,td.spacer{border:none;background:#fffdfa;width:3%;}",
+      "th.spacer,td.spacer{border:none;background:#ffffff;width:3%;}",
       "@page{margin:20mm;}",
       "@media print{body{background:#fff;} .toolbar{display:none;} .shell{max-width:none;padding:0;} .card{border:none;box-shadow:none;padding:0;background:#fff;}}",
       "</style>",
@@ -1009,7 +1045,7 @@
       "<div class='card'>",
       "<h1>Tapering Schedule</h1>",
       `<p class='meta'>Generated: ${escapeHtml(todayIso())} | Starting date: ${escapeHtml(state.values.start_date)} | Mode: ${escapeHtml(state.configUsed.mode)}</p>`,
-      `<div class='chart'>${state.chartSvg}</div>`,
+      `<div class='chart'>${printChartSvg}</div>`,
       buildPrintTable(state.downloadRows),
       "</div>",
       "</div>",
@@ -1018,8 +1054,22 @@
     ].join("");
   }
 
+  function buildPrintChartSvg() {
+    if (!state.result || !state.configUsed || state.n == null || state.ec50 == null || !state.calibrationPoints) {
+      return "";
+    }
+    return buildSummarySvg(
+      state.result,
+      state.configUsed,
+      state.n,
+      state.ec50,
+      state.calibrationPoints,
+      { width: 1180, height: 360, theme: PRINT_CHART_THEME }
+    );
+  }
+
   function buildPrintTable(rows) {
-    const entries = rows.map((row) => [row.day, row.date, row.dose_mg]);
+    const entries = rows.map((row) => [row.day, row.weekday, row.date, row.dose_mg]);
     const splitIndex = Math.ceil(entries.length / 2);
     const leftRows = entries.slice(0, splitIndex);
     const rightRows = entries.slice(splitIndex);
@@ -1030,14 +1080,16 @@
       const right = rightRows[index] || null;
       bodyRows.push(
         "<tr>" +
-          printCell(left ? left[1] : "") +
           printCell(left ? left[0] : "") +
-          printCell(left ? formatFixed(left[2], 3) : "") +
+          printCell(left ? left[1] : "") +
+          printCell(left ? left[2] : "") +
+          printCell(left ? formatDosePreview(left[3]) : "") +
           printCell("") +
           "<td class='spacer'></td>" +
-          printCell(right ? right[1] : "") +
           printCell(right ? right[0] : "") +
-          printCell(right ? formatFixed(right[2], 3) : "") +
+          printCell(right ? right[1] : "") +
+          printCell(right ? right[2] : "") +
+          printCell(right ? formatDosePreview(right[3]) : "") +
           printCell("") +
         "</tr>"
       );
@@ -1046,9 +1098,9 @@
     return [
       "<table>",
       "<thead><tr>",
-      "<th>Date</th><th>Day</th><th>Dose (mg)</th><th>Taken</th>",
+      "<th>Day</th><th>Weekday</th><th>Date</th><th>Dose (mg)</th><th>Taken</th>",
       "<th class='spacer'></th>",
-      "<th>Date</th><th>Day</th><th>Dose (mg)</th><th>Taken</th>",
+      "<th>Day</th><th>Weekday</th><th>Date</th><th>Dose (mg)</th><th>Taken</th>",
       "</tr></thead>",
       "<tbody>",
       bodyRows.join(""),
@@ -1059,30 +1111,6 @@
 
   function printCell(value) {
     return `<td>${value === "" ? "&nbsp;" : escapeHtml(String(value))}</td>`;
-  }
-
-  function svgToPngDataUrl(svgString, width, height) {
-    return new Promise((resolve, reject) => {
-      const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const image = new Image();
-      image.onload = function () {
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fffdfa";
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(image, 0, 0, width, height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/png"));
-      };
-      image.onerror = function () {
-        URL.revokeObjectURL(url);
-        reject(new Error("Could not render chart PNG."));
-      };
-      image.src = url;
-    });
   }
 
   function downloadBlob(filename, type, content) {
@@ -1133,6 +1161,37 @@
       return formatFixed(value, 6);
     }
     return String(value);
+  }
+
+  function formatSchedulePreviewValue(row, key) {
+    if (key === "day") {
+      return String(Math.round(row.day));
+    }
+    if (key === "weekday") {
+      return row.weekday || "";
+    }
+    if (key === "date") {
+      return row.date || "";
+    }
+    if (key === "dose_mg") {
+      return formatDosePreview(row.dose_mg);
+    }
+    return formatSignificant(row[key], 3);
+  }
+
+  function formatDosePreview(value) {
+    if (value == null || Number.isNaN(value)) {
+      return "";
+    }
+    const decimals = Math.abs(Number(value)) > 2 ? 1 : 2;
+    return Number(value).toFixed(decimals);
+  }
+
+  function formatSignificant(value, digits) {
+    if (value == null || Number.isNaN(value)) {
+      return "";
+    }
+    return String(Number(Number(value).toPrecision(digits == null ? 3 : digits)));
   }
 
   function formatFixed(value, decimals) {
@@ -1198,6 +1257,11 @@
     const date = new Date(`${startIso}T00:00:00`);
     date.setDate(date.getDate() + days);
     return dateToIsoLocal(date);
+  }
+
+  function weekdayShort(isoDate) {
+    const date = new Date(`${isoDate}T00:00:00`);
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
   }
 
   function todayIso() {
